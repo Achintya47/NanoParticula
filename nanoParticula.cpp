@@ -19,6 +19,10 @@ constexpr int GRID_WIDTH = WIDTH / CELL_SIZE;
 constexpr int GRID_HEIGHT = HEIGHT / CELL_SIZE;
 std::vector<std::vector<int>> grid(GRID_WIDTH * GRID_HEIGHT);
 
+long long collisionChecks = 0; // Global Counter
+long long totalChecks = 0; // Accumulate across frames
+long long frameCount = 0; // Number of frames simulated
+
 typedef struct {
     float x_pos, y_pos;
     float v_x, v_y;
@@ -66,12 +70,15 @@ void CheckParticleCollisionGrid() {
                     if (nX < 0 || nX >= GRID_WIDTH || nY < 0 || nY >= GRID_HEIGHT)
                         continue;
 
+                    
+
                     int neighborIndex = nY * GRID_WIDTH + nX;
 
                     // Compare particles in cell vs neighbor
                     for (int i : grid[cellIndex]) {
                         for (int j : grid[neighborIndex]) {
                             if (i >= j) continue; // avoid double checks
+                            collisionChecks++;
 
                             Particle* curr = &particles[i];
                             Particle* other = &particles[j];
@@ -82,8 +89,7 @@ void CheckParticleCollisionGrid() {
                             float rad_sum = curr->radius + other->radius;
 
                             if (dist_sq <= rad_sum * rad_sum) {
-                                // Handle collision (same as your CheckParticleCollision)
-                                // Normalization, velocity exchange, restitution, overlap correction...
+                                HandleCollision(curr, other, rad_sum, dist_sq);
                             }
                         }
                     }
@@ -91,8 +97,25 @@ void CheckParticleCollisionGrid() {
             }
         }
     }
+    ReportCollisionStats();
 }
 
+void ReportCollisionStats() {
+    frameCount++;
+    totalChecks += collisionChecks;
+
+    if (frameCount % 60 == 0) {
+        long long avgChecks = totalChecks / frameCount;
+        // Store the average so we can draw it
+        static char buffer[128];
+        snprintf(buffer, sizeof(buffer), "Avg collision checks/frame: %lld", avgChecks);
+
+        // Draw on screen (top-left corner, below FPS)
+        DrawText(buffer, 5, 25, 20, GREEN);
+    }
+
+    collisionChecks = 0;
+}
 
 void UpdateParticle(Particle* particle) {
     particle->x_pos += particle->v_x;
@@ -220,6 +243,8 @@ void CheckParticleCollision() {
         for (int j = i + 1; j < NUM_PARTICLES; j++){
             if (j == i)
                 continue;
+            collisionChecks++;
+
             other = particles + j;
             float dx = curr->x_pos - other->x_pos;
             float dy = curr->y_pos - other->y_pos;
@@ -231,6 +256,7 @@ void CheckParticleCollision() {
             }
         }
     }
+    ReportCollisionStats();
 }
 
 
