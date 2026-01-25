@@ -8,12 +8,12 @@
 
 #define WIDTH 800
 #define HEIGHT 600
-#define NUM_PARTICLES 200
+#define NUM_PARTICLES 1000
 
 #define SCALING_CONSTANT 1.5f
 #define DAMPING_COEFF 0.99999f
-#define GRAVITY 0.8f
-#define RESTITUTION 0.1f
+#define GRAVITY 0.9f
+#define RESTITUTION 0.3f
 
 constexpr int CELL_SIZE = 50;
 constexpr int GRID_WIDTH = WIDTH / CELL_SIZE;
@@ -76,6 +76,8 @@ typedef struct {
 // AoS structure
 Particle particles[NUM_PARTICLES];
 
+Particle mouseParticle;
+
 inline float dot(float x1, float y1, float x2, float y2) {
     return x1 * x2 + y1 * y2;
 }
@@ -115,7 +117,7 @@ void ReportCollisionStats() {
 
     // Also show current frame’s checks
     static char buffer3[128];
-    snprintf(buffer2, sizeof(buffer2), "Actual Collisions this frame: %lld", actualCollisions);
+    snprintf(buffer2, sizeof(buffer3), "Actual Collisions this frame: %lld", actualCollisions);
     DrawText(buffer2, 5, 75, 20, BLUE);
 
     collisionChecks = 0; // reset for next frame
@@ -266,6 +268,12 @@ void InitParticles() {
     std::uniform_int_distribution<> x_pos(0, WIDTH);
     std::uniform_int_distribution<> y_pos(0, HEIGHT);
 
+    // Mouse Particle
+    mouseParticle.radius = 20; // bigger so it's visible
+    mouseParticle.mass = mouseParticle.radius * mouseParticle.radius * SCALING_CONSTANT;
+    mouseParticle.color = RED; // distinct color
+    
+
     for (int i =0; i < NUM_PARTICLES; i++){
         particles[i].radius = rad(gen);
         particles[i].v_x = v_x(gen);
@@ -309,6 +317,14 @@ void CheckParticleCollision() {
     }
 }
 
+void UpdateMouseParticle() {
+    Vector2 mousepos = GetMousePosition();
+    mouseParticle.x_pos = mousepos.x;
+    mouseParticle.y_pos = mousepos.y;
+    mouseParticle.v_x = 0;
+    mouseParticle.v_y = 0;
+}
+
 
 int main() {
     InitWindow(800, 600, "Raylib + CMake on WSL");
@@ -326,12 +342,12 @@ int main() {
             ReportCollisionStats();
             // DrawCollisionGraph(WIDTH - GRAPH_WIDTH - 10, 10);
 
-            UpdateParticles();
-            // CheckParticleCollision();
-
             ResetGrid();
             CheckParticleCollisionGrid();
+            // DrawCircle(mouseParticle.x_pos, mouseParticle.y_pos, mouseParticle.radius, mouseParticle.color);
 
+            UpdateParticles();
+            // CheckParticleCollision();
             DrawParticles();
         EndDrawing();
     }
