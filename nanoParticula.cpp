@@ -5,12 +5,13 @@
 
 #define WIDTH 800
 #define HEIGHT 600
-#define NUM_PARTICLES 10
+#define NUM_PARTICLES 50
 
 typedef struct {
     float x_pos, y_pos;
     float v_x, v_y;
     float radius;
+    Color color;
 } Particle;
 
 Particle particles[NUM_PARTICLES];
@@ -46,7 +47,7 @@ void UpdateParticle(Particle* particle) {
 }
 
 void DrawParticle(Particle* particle) {
-    DrawCircle(particle->x_pos, particle->y_pos, particle->radius, WHITE);
+    DrawCircle(particle->x_pos, particle->y_pos, particle->radius, particle->color);
 }
 
 void DrawParticles() {
@@ -76,6 +77,13 @@ void InitParticles() {
         particles[i].v_y = v_y(gen);
         particles[i].x_pos = x_pos(gen);
         particles[i].y_pos = y_pos(gen);
+
+        particles[i].color = (Color){
+            (unsigned char)GetRandomValue(50, 255),   // R
+            (unsigned char)GetRandomValue(50, 255),   // G
+            (unsigned char)GetRandomValue(50, 255),   // B
+            255                                       // Alpha
+        };
     }
 }
 
@@ -99,8 +107,9 @@ void CheckParticleCollision() {
                 // Unit normal Vector at collision
                 float norm_x = curr->x_pos - other->x_pos;
                 float norm_y = curr->y_pos - other->y_pos;
-                norm_x /= sqrt(norm_x * norm_x + norm_y * norm_y);
-                norm_y /= sqrt(norm_x * norm_x + norm_y * norm_y);
+                float magnitude = sqrt(norm_x * norm_x + norm_y * norm_y);
+                norm_x /= magnitude;
+                norm_y /= magnitude;
 
                 // Unit tangent Vector
                 float tang_x = -norm_y;
