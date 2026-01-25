@@ -5,13 +5,17 @@
 
 #define WIDTH 800
 #define HEIGHT 600
-#define NUM_PARTICLES 50
+#define NUM_PARTICLES 100
+#define SCALING_CONSTANT 1.5f
+#define DAMPING_COEFF 0.99f
 
 typedef struct {
     float x_pos, y_pos;
     float v_x, v_y;
     float radius;
     Color color;
+    float mass;
+
 } Particle;
 
 Particle particles[NUM_PARTICLES];
@@ -23,6 +27,9 @@ float dot(float x1, float y1, float x2, float y2) {
 void UpdateParticle(Particle* particle) {
     particle->x_pos += particle->v_x;
     particle->y_pos += particle->v_y;
+
+    particle->v_x *= DAMPING_COEFF;
+    particle->v_y *= DAMPING_COEFF;
 
     float x_curr = particle->x_pos;
     float y_curr = particle->y_pos;
@@ -84,6 +91,7 @@ void InitParticles() {
             (unsigned char)GetRandomValue(50, 255),   // B
             255                                       // Alpha
         };
+        particles[i].mass = particles[i].radius * particles[i].radius * SCALING_CONSTANT;
     }
 }
 
@@ -123,8 +131,9 @@ void CheckParticleCollision() {
 
                 // Since mass is considered the same, velocities exchange, elastic collision
                 float temp = v1_norm;
-                v1_norm = v2_norm;
-                v2_norm = temp;
+                v1_norm = (v1_norm * (curr->mass - other->mass) + 2 * other->mass * v2_norm) / (curr->mass + other->mass);
+                v2_norm = (v2_norm * (other->mass - curr->mass) + 2 * curr->mass * temp) / (curr->mass + other->mass);
+
 
                 // Reconstruct Velocities
                 curr->v_x = v1_norm * norm_x + v1_tang * tang_x;
