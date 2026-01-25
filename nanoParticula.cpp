@@ -1,10 +1,11 @@
 #include "raylib.h"
 #include <cstdint>
 #include <random>
+#include <cmath>
 
 #define WIDTH 800
 #define HEIGHT 600
-#define NUM_PARTICLES 100
+#define NUM_PARTICLES 10
 
 typedef struct {
     float x_pos, y_pos;
@@ -13,6 +14,10 @@ typedef struct {
 } Particle;
 
 Particle particles[NUM_PARTICLES];
+
+float dot(float x1, float y1, float x2, float y2) {
+    return x1 * x2 + y1 * y2;
+}
 
 void UpdateParticle(Particle* particle) {
     particle->x_pos += particle->v_x;
@@ -71,6 +76,62 @@ void InitParticles() {
         particles[i].v_y = v_y(gen);
         particles[i].x_pos = x_pos(gen);
         particles[i].y_pos = y_pos(gen);
+    }
+}
+
+void CheckParticleCollision() {
+    Particle* curr;
+    Particle* other;
+
+    for (int i = 0; i < NUM_PARTICLES; i++){
+        curr = particles + i;
+        for (int j = 0; j < NUM_PARTICLES; j++){
+            if (j == i)
+                continue;
+            other = particles + j;
+            float dx = curr->x_pos - other->x_pos;
+            float dy = curr->y_pos - other->y_pos;
+            float dist_sq = dx * dx + dy * dy;
+            float rad_sum = curr->radius + other->radius;
+            
+            if (dist_sq <= rad_sum * rad_sum) {
+
+                // Unit normal Vector at collision
+                float norm_x = curr->x_pos - other->x_pos;
+                float norm_y = curr->y_pos - other->y_pos;
+                norm_x /= sqrt(norm_x * norm_x + norm_y * norm_y);
+                norm_y /= sqrt(norm_x * norm_x + norm_y * norm_y);
+
+                // Unit tangent Vector
+                float tang_x = -norm_y;
+                float tang_y = norm_x;
+
+                // Velocity component projection along tangent and normal
+                float v1_norm = dot(curr->v_x, curr->v_y, norm_x, norm_y);
+                float v2_norm = dot(other->v_x, other->v_y, norm_x, norm_y);
+                float v1_tang = dot(curr->v_x, curr->v_y, tang_x, tang_y);
+                float v2_tang = dot(other->v_x, other->v_y, tang_x, tang_y);
+
+                // Since mass is considered the same, velocities exchange, elastic collision
+                float temp = v1_norm;
+                v1_norm = v2_norm;
+                v2_norm = temp;
+
+                // Reconstruct Velocities
+                curr->v_x = v1_norm * norm_x + v1_tang * tang_x;
+                curr->v_y = v1_norm * norm_y + v1_tang * tang_y;
+                other->v_x = v2_norm * norm_x + v2_tang * tang_x;
+                other->v_y = v2_norm * norm_y + v2_tang * tang_y;
+
+                // Seperate overlapping particles
+                float overlap = 0.5f * (rad_sum - sqrt(dist_sq));
+                curr->x_pos += overlap * norm_x;
+                curr->y_pos += overlap * norm_y;
+                other->x_pos -= overlap * norm_x;
+                other->y_pos -= overlap * norm_y;
+
+            }
+        }
     }
 }
 
