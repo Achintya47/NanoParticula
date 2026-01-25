@@ -8,11 +8,12 @@
 
 #define WIDTH 800
 #define HEIGHT 600
-#define NUM_PARTICLES 100
+#define NUM_PARTICLES 200
+
 #define SCALING_CONSTANT 1.5f
-#define DAMPING_COEFF 0.99f
-#define GRAVITY 0.3f
-#define RESTITUTION 0.8f
+#define DAMPING_COEFF 0.99999f
+#define GRAVITY 0.8f
+#define RESTITUTION 0.1f
 
 constexpr int CELL_SIZE = 50;
 constexpr int GRID_WIDTH = WIDTH / CELL_SIZE;
@@ -22,6 +23,46 @@ std::vector<std::vector<int>> grid(GRID_WIDTH * GRID_HEIGHT);
 long long collisionChecks = 0; // Global Counter
 long long totalChecks = 0; // Accumulate across frames
 long long frameCount = 0; // Number of frames simulated
+long long actualCollisions = 0;
+
+constexpr int GRAPH_WIDTH = 200;
+constexpr int GRAPH_HEIGHT = 100;
+constexpr int HISTORY_SIZE = 200;
+
+std::vector<int> collisionHistory(HISTORY_SIZE, 0);
+int historyIndex = 0;
+
+// Drawing the Collision history graph on the raylib window
+// void UpdateCollisionHistory(int collisions) {
+//     collisionHistory[historyIndex] = collisions;
+//     historyIndex = (historyIndex + 1) % HISTORY_SIZE;
+// }
+
+// void DrawCollisionGraph(int x, int y) {
+//     // Background box
+//     DrawRectangle(x, y, GRAPH_WIDTH, GRAPH_HEIGHT, DARKGRAY);
+
+//     // Find max collisions in history for scaling
+//     int maxVal = 1;
+//     for (int c : collisionHistory) if (c > maxVal) maxVal = c;
+
+//     // Draw line graph
+//     for (int i = 1; i < HISTORY_SIZE; i++) {
+//         int prevIndex = (historyIndex + i - 1) % HISTORY_SIZE;
+//         int currIndex = (historyIndex + i) % HISTORY_SIZE;
+
+//         float x1 = x + (i - 1) * (GRAPH_WIDTH / (float)HISTORY_SIZE);
+//         float y1 = y + GRAPH_HEIGHT - (collisionHistory[prevIndex] / (float)maxVal * GRAPH_HEIGHT);
+//         float x2 = x + i * (GRAPH_WIDTH / (float)HISTORY_SIZE);
+//         float y2 = y + GRAPH_HEIGHT - (collisionHistory[currIndex] / (float)maxVal * GRAPH_HEIGHT);
+
+//         DrawLine(x1, y1, x2, y2, GREEN);
+//     }
+
+//     // Label
+//     DrawText("Collisions", x + 5, y + 5, 10, WHITE);
+// }
+
 
 typedef struct {
     float x_pos, y_pos;
@@ -56,6 +97,71 @@ void ResetGrid(){
     }
 }
 
+void ReportCollisionStats() {
+    frameCount++;
+    totalChecks += collisionChecks;
+
+    long long avgChecks = totalChecks / frameCount;
+
+    static char buffer[128];
+    snprintf(buffer, sizeof(buffer), "Avg collision checks/frame: %lld", avgChecks);
+    // Draw on screen (top-left corner, below FPS)
+    DrawText(buffer, 5, 25, 20, GREEN);
+
+    // Also show current frame’s checks
+    static char buffer2[128];
+    snprintf(buffer2, sizeof(buffer2), "Collision checks this frame: %lld", collisionChecks);
+    DrawText(buffer2, 5, 50, 20, YELLOW);
+
+    // Also show current frame’s checks
+    static char buffer3[128];
+    snprintf(buffer2, sizeof(buffer2), "Actual Collisions this frame: %lld", actualCollisions);
+    DrawText(buffer2, 5, 75, 20, BLUE);
+
+    collisionChecks = 0; // reset for next frame
+    actualCollisions = 0; // reset for next frame
+}
+
+void HandleCollision(Particle* curr, Particle* other, float rad_sum, float dist_sq) {
+
+    // Unit normal Vector at collision
+    float norm_x = curr->x_pos - other->x_pos;
+    float norm_y = curr->y_pos - other->y_pos;
+    float magnitude = sqrt(norm_x * norm_x + norm_y * norm_y);
+    norm_x /= magnitude;
+    norm_y /= magnitude;
+
+    // Unit tangent Vector
+    float tang_x = -norm_y;
+    float tang_y = norm_x;
+
+    // Velocity component projection along tangent and normal
+    float v1_norm = dot(curr->v_x, curr->v_y, norm_x, norm_y);
+    float v2_norm = dot(other->v_x, other->v_y, norm_x, norm_y);
+    float v1_tang = dot(curr->v_x, curr->v_y, tang_x, tang_y);
+    float v2_tang = dot(other->v_x, other->v_y, tang_x, tang_y);
+
+    // Since mass is considered the same, velocities exchange, elastic collision
+    float temp = v1_norm;
+    v1_norm = ((v1_norm * (curr->mass - other->mass) + 2 * other->mass * v2_norm) / (curr->mass + other->mass)) * RESTITUTION;
+    v2_norm = ((v2_norm * (other->mass - curr->mass) + 2 * curr->mass * temp) / (curr->mass + other->mass)) * RESTITUTION;
+
+
+    // Reconstruct Velocities
+    curr->v_x = v1_norm * norm_x + v1_tang * tang_x;
+    curr->v_y = v1_norm * norm_y + v1_tang * tang_y;
+    other->v_x = v2_norm * norm_x + v2_tang * tang_x;
+    other->v_y = v2_norm * norm_y + v2_tang * tang_y;
+
+    // Seperate overlapping particles
+    float overlap = 0.5f * (rad_sum - sqrt(dist_sq));
+    curr->x_pos += overlap * norm_x;
+    curr->y_pos += overlap * norm_y;
+    other->x_pos -= overlap * norm_x;
+    other->y_pos -= overlap * norm_y;
+}
+
+
 void CheckParticleCollisionGrid() {
     for (int cellY = 0; cellY < GRID_HEIGHT; cellY++) {
         for (int cellX = 0; cellX < GRID_WIDTH; cellX++) {
@@ -89,6 +195,7 @@ void CheckParticleCollisionGrid() {
                             float rad_sum = curr->radius + other->radius;
 
                             if (dist_sq <= rad_sum * rad_sum) {
+                                actualCollisions++;
                                 HandleCollision(curr, other, rad_sum, dist_sq);
                             }
                         }
@@ -97,25 +204,8 @@ void CheckParticleCollisionGrid() {
             }
         }
     }
-    ReportCollisionStats();
 }
 
-void ReportCollisionStats() {
-    frameCount++;
-    totalChecks += collisionChecks;
-
-    if (frameCount % 60 == 0) {
-        long long avgChecks = totalChecks / frameCount;
-        // Store the average so we can draw it
-        static char buffer[128];
-        snprintf(buffer, sizeof(buffer), "Avg collision checks/frame: %lld", avgChecks);
-
-        // Draw on screen (top-left corner, below FPS)
-        DrawText(buffer, 5, 25, 20, GREEN);
-    }
-
-    collisionChecks = 0;
-}
 
 void UpdateParticle(Particle* particle) {
     particle->x_pos += particle->v_x;
@@ -194,46 +284,6 @@ void InitParticles() {
 }
 
 
-void HandleCollision(Particle* curr, Particle* other, float rad_sum, float dist_sq) {
-
-    // Unit normal Vector at collision
-    float norm_x = curr->x_pos - other->x_pos;
-    float norm_y = curr->y_pos - other->y_pos;
-    float magnitude = sqrt(norm_x * norm_x + norm_y * norm_y);
-    norm_x /= magnitude;
-    norm_y /= magnitude;
-
-    // Unit tangent Vector
-    float tang_x = -norm_y;
-    float tang_y = norm_x;
-
-    // Velocity component projection along tangent and normal
-    float v1_norm = dot(curr->v_x, curr->v_y, norm_x, norm_y);
-    float v2_norm = dot(other->v_x, other->v_y, norm_x, norm_y);
-    float v1_tang = dot(curr->v_x, curr->v_y, tang_x, tang_y);
-    float v2_tang = dot(other->v_x, other->v_y, tang_x, tang_y);
-
-    // Since mass is considered the same, velocities exchange, elastic collision
-    float temp = v1_norm;
-    v1_norm = ((v1_norm * (curr->mass - other->mass) + 2 * other->mass * v2_norm) / (curr->mass + other->mass)) * RESTITUTION;
-    v2_norm = ((v2_norm * (other->mass - curr->mass) + 2 * curr->mass * temp) / (curr->mass + other->mass)) * RESTITUTION;
-
-
-    // Reconstruct Velocities
-    curr->v_x = v1_norm * norm_x + v1_tang * tang_x;
-    curr->v_y = v1_norm * norm_y + v1_tang * tang_y;
-    other->v_x = v2_norm * norm_x + v2_tang * tang_x;
-    other->v_y = v2_norm * norm_y + v2_tang * tang_y;
-
-    // Seperate overlapping particles
-    float overlap = 0.5f * (rad_sum - sqrt(dist_sq));
-    curr->x_pos += overlap * norm_x;
-    curr->y_pos += overlap * norm_y;
-    other->x_pos -= overlap * norm_x;
-    other->y_pos -= overlap * norm_y;
-}
-
-
 void CheckParticleCollision() {
     Particle* curr;
     Particle* other;
@@ -252,11 +302,11 @@ void CheckParticleCollision() {
             float rad_sum = curr->radius + other->radius;
             
             if (dist_sq <= rad_sum * rad_sum) {
+                actualCollisions++;
                 HandleCollision(curr, other, rad_sum, dist_sq);
             }
         }
     }
-    ReportCollisionStats();
 }
 
 
@@ -272,8 +322,16 @@ int main() {
         BeginDrawing();
             DrawFPS(5, 5);
             ClearBackground(BLACK);
+
+            ReportCollisionStats();
+            // DrawCollisionGraph(WIDTH - GRAPH_WIDTH - 10, 10);
+
             UpdateParticles();
-            CheckParticleCollision();
+            // CheckParticleCollision();
+
+            ResetGrid();
+            CheckParticleCollisionGrid();
+
             DrawParticles();
         EndDrawing();
     }
