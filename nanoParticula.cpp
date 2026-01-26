@@ -32,37 +32,6 @@ constexpr int HISTORY_SIZE = 200;
 std::vector<int> collisionHistory(HISTORY_SIZE, 0);
 int historyIndex = 0;
 
-// Drawing the Collision history graph on the raylib window
-// void UpdateCollisionHistory(int collisions) {
-//     collisionHistory[historyIndex] = collisions;
-//     historyIndex = (historyIndex + 1) % HISTORY_SIZE;
-// }
-
-// void DrawCollisionGraph(int x, int y) {
-//     // Background box
-//     DrawRectangle(x, y, GRAPH_WIDTH, GRAPH_HEIGHT, DARKGRAY);
-
-//     // Find max collisions in history for scaling
-//     int maxVal = 1;
-//     for (int c : collisionHistory) if (c > maxVal) maxVal = c;
-
-//     // Draw line graph
-//     for (int i = 1; i < HISTORY_SIZE; i++) {
-//         int prevIndex = (historyIndex + i - 1) % HISTORY_SIZE;
-//         int currIndex = (historyIndex + i) % HISTORY_SIZE;
-
-//         float x1 = x + (i - 1) * (GRAPH_WIDTH / (float)HISTORY_SIZE);
-//         float y1 = y + GRAPH_HEIGHT - (collisionHistory[prevIndex] / (float)maxVal * GRAPH_HEIGHT);
-//         float x2 = x + i * (GRAPH_WIDTH / (float)HISTORY_SIZE);
-//         float y2 = y + GRAPH_HEIGHT - (collisionHistory[currIndex] / (float)maxVal * GRAPH_HEIGHT);
-
-//         DrawLine(x1, y1, x2, y2, GREEN);
-//     }
-
-//     // Label
-//     DrawText("Collisions", x + 5, y + 5, 10, WHITE);
-// }
-
 
 typedef struct {
     float x_pos, y_pos;
@@ -72,6 +41,25 @@ typedef struct {
     float mass;
 
 } Particle;
+
+
+
+struct Particles2 {
+    std::vector<float> x_pos, y_pos;
+    std::vector<float> v_x, v_y;
+    std::vector<float> mass;
+    std::vector<float> radius;
+
+    Particles2(size_t n) {
+        x_pos.resize(n);
+        y_pos.resize(n);
+        radius.resize(n);
+        v_x.resize(n);
+        v_y.resize(n);
+        mass.resize(n);
+    }
+};
+
 
 // AoS structure
 Particle particles[NUM_PARTICLES];
@@ -86,8 +74,8 @@ void ResetGrid(){
     for (auto& cell : grid) cell.clear();
 
     for (int i = 0; i < NUM_PARTICLES; i++) {
-        int cellX = particles[i].x_pos / CELL_SIZE;
-        int cellY = particles[i].y_pos / CELL_SIZE;
+        int cellX = particles2->x_pos[i] / CELL_SIZE;
+        int cellY =  particles2->y_pos[i] / CELL_SIZE;
 
         if (cellX < 0) cellX = 0;
         if (cellX >= GRID_WIDTH) cellX = GRID_WIDTH - 1;
@@ -124,12 +112,54 @@ void ReportCollisionStats() {
     actualCollisions = 0; // reset for next frame
 }
 
-void HandleCollision(Particle* curr, Particle* other, float rad_sum, float dist_sq) {
+// void HandleCollision(Particle* curr, Particle* other, float rad_sum, float dist_sq) {
+
+//     // Unit normal Vector at collision
+//     float norm_x = curr->x_pos - other->x_pos;
+//     float norm_y = curr->y_pos - other->y_pos;
+//     float magnitude = sqrt(norm_x * norm_x + norm_y * norm_y);
+//     norm_x /= magnitude;
+//     norm_y /= magnitude;
+
+//     // Unit tangent Vector
+//     float tang_x = -norm_y;
+//     float tang_y = norm_x;
+
+//     // Velocity component projection along tangent and normal
+//     float v1_norm = dot(curr->v_x, curr->v_y, norm_x, norm_y);
+//     float v2_norm = dot(other->v_x, other->v_y, norm_x, norm_y);
+//     float v1_tang = dot(curr->v_x, curr->v_y, tang_x, tang_y);
+//     float v2_tang = dot(other->v_x, other->v_y, tang_x, tang_y);
+
+//     // Since mass is considered the same, velocities exchange, elastic collision
+//     float temp = v1_norm;
+//     v1_norm = ((v1_norm * (curr->mass - other->mass) + 2 * other->mass * v2_norm) / (curr->mass + other->mass)) * RESTITUTION;
+//     v2_norm = ((v2_norm * (other->mass - curr->mass) + 2 * curr->mass * temp) / (curr->mass + other->mass)) * RESTITUTION;
+
+
+//     // Reconstruct Velocities
+//     curr->v_x = v1_norm * norm_x + v1_tang * tang_x;
+//     curr->v_y = v1_norm * norm_y + v1_tang * tang_y;
+//     other->v_x = v2_norm * norm_x + v2_tang * tang_x;
+//     other->v_y = v2_norm * norm_y + v2_tang * tang_y;
+
+//     // Seperate overlapping particles
+//     float overlap = 0.5f * (rad_sum - sqrt(dist_sq));
+//     curr->x_pos += overlap * norm_x;
+//     curr->y_pos += overlap * norm_y;
+//     other->x_pos -= overlap * norm_x;
+//     other->y_pos -= overlap * norm_y;
+// }
+
+void HandleCollision(Particles2& particles, size_t curr, size_t other, float rad_sum, float dist_sq) {
 
     // Unit normal Vector at collision
-    float norm_x = curr->x_pos - other->x_pos;
-    float norm_y = curr->y_pos - other->y_pos;
+    float norm_x = particles.x_pos[curr] - particles.x_pos[other];
+    float norm_y = particles.y_pos[curr] - particles.y_pos[other];
     float magnitude = sqrt(norm_x * norm_x + norm_y * norm_y);
+
+    if (magnitude == 0.0f) return;
+
     norm_x /= magnitude;
     norm_y /= magnitude;
 
@@ -138,29 +168,34 @@ void HandleCollision(Particle* curr, Particle* other, float rad_sum, float dist_
     float tang_y = norm_x;
 
     // Velocity component projection along tangent and normal
-    float v1_norm = dot(curr->v_x, curr->v_y, norm_x, norm_y);
-    float v2_norm = dot(other->v_x, other->v_y, norm_x, norm_y);
-    float v1_tang = dot(curr->v_x, curr->v_y, tang_x, tang_y);
-    float v2_tang = dot(other->v_x, other->v_y, tang_x, tang_y);
+    float v1_norm = dot(particles.v_x[curr], particles.v_y[curr], norm_x, norm_y);
+    float v2_norm = dot(particles.v_x[other], particles.v_y[other], norm_x, norm_y);
+    float v1_tang = dot(particles.v_x[curr], particles.v_y[curr], tang_x, tang_y);
+    float v2_tang = dot(particles.v_x[other], particles.v_y[other], tang_x, tang_y);
 
     // Since mass is considered the same, velocities exchange, elastic collision
     float temp = v1_norm;
-    v1_norm = ((v1_norm * (curr->mass - other->mass) + 2 * other->mass * v2_norm) / (curr->mass + other->mass)) * RESTITUTION;
-    v2_norm = ((v2_norm * (other->mass - curr->mass) + 2 * curr->mass * temp) / (curr->mass + other->mass)) * RESTITUTION;
+    v1_norm = ((v1_norm * (particles.mass[curr] - particles.mass[other]) + 2 * particles.mass[other] * v2_norm) / (particles.mass[curr] + particles.mass[other]));
+    v2_norm = ((v2_norm * (particles.mass[other] - particles.mass[curr]) + 2 * particles.mass[curr] * temp) / (particles.mass[curr] + particles.mass[other]));
 
 
     // Reconstruct Velocities
-    curr->v_x = v1_norm * norm_x + v1_tang * tang_x;
-    curr->v_y = v1_norm * norm_y + v1_tang * tang_y;
-    other->v_x = v2_norm * norm_x + v2_tang * tang_x;
-    other->v_y = v2_norm * norm_y + v2_tang * tang_y;
+    particles.v_x[curr] = v1_norm * norm_x + v1_tang * tang_x;
+    particles.v_y[curr] = v1_norm * norm_y + v1_tang * tang_y;
+    particles.v_x[other] = v2_norm * norm_x + v2_tang * tang_x;
+    particles.v_y[other] = v2_norm * norm_y + v2_tang * tang_y;
 
-    // Seperate overlapping particles
-    float overlap = 0.5f * (rad_sum - sqrt(dist_sq));
-    curr->x_pos += overlap * norm_x;
-    curr->y_pos += overlap * norm_y;
-    other->x_pos -= overlap * norm_x;
-    other->y_pos -= overlap * norm_y;
+    float overlap = (rad_sum - sqrt(dist_sq));
+    float totalMass = particles.mass[curr] + particles.mass[other];
+    float ratioCurr = particles.mass[other] / totalMass;
+    float ratioOther = particles.mass[curr] / totalMass;
+
+    // Apply mass-weighted correction
+    particles.x_pos[curr] += overlap * ratioCurr * norm_x;
+    particles.y_pos[curr] += overlap * ratioCurr * norm_y;
+    particles.x_pos[other] -= overlap * ratioOther * norm_x;
+    particles.y_pos[other] -= overlap * ratioOther * norm_y;
+
 }
 
 
@@ -262,7 +297,7 @@ void UpdateParticles() {
 void InitParticles() {
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_int_distribution<> rad(5, 15);
+    std::uniform_int_distribution<> rad(1,2);
     std::uniform_int_distribution<> v_x(5, 10);
     std::uniform_int_distribution<> v_y(2,10);
     std::uniform_int_distribution<> x_pos(0, WIDTH);
