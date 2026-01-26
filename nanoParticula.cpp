@@ -151,6 +151,7 @@ void ReportCollisionStats() {
 //     other->y_pos -= overlap * norm_y;
 // }
 
+
 void HandleCollision(Particles2& particles, size_t curr, size_t other, float rad_sum, float dist_sq) {
 
     // Unit normal Vector at collision
@@ -199,7 +200,52 @@ void HandleCollision(Particles2& particles, size_t curr, size_t other, float rad
 }
 
 
-void CheckParticleCollisionGrid() {
+// void CheckParticleCollisionGrid() {
+//     for (int cellY = 0; cellY < GRID_HEIGHT; cellY++) {
+//         for (int cellX = 0; cellX < GRID_WIDTH; cellX++) {
+//             int cellIndex = cellY * GRID_WIDTH + cellX;
+
+//             // Check this cell + 8 neighbors
+//             for (int ny = -1; ny <= 1; ny++) {
+//                 for (int nx = -1; nx <= 1; nx++) {
+//                     int nX = cellX + nx;
+//                     int nY = cellY + ny;
+
+//                     if (nX < 0 || nX >= GRID_WIDTH || nY < 0 || nY >= GRID_HEIGHT)
+//                         continue;
+
+                    
+
+//                     int neighborIndex = nY * GRID_WIDTH + nX;
+
+//                     // Compare particles in cell vs neighbor
+//                     for (int i : grid[cellIndex]) {
+//                         for (int j : grid[neighborIndex]) {
+//                             if (i >= j) continue; // avoid double checks
+//                             collisionChecks++;
+
+//                             Particle* curr = &particles[i];
+//                             Particle* other = &particles[j];
+
+//                             float dx = curr->x_pos - other->x_pos;
+//                             float dy = curr->y_pos - other->y_pos;
+//                             float dist_sq = dx * dx + dy * dy;
+//                             float rad_sum = curr->radius + other->radius;
+
+//                             if (dist_sq <= rad_sum * rad_sum) {
+//                                 actualCollisions++;
+//                                 HandleCollision(curr, other, rad_sum, dist_sq);
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
+
+//  PASS GRID AS A PARAMETER LATER in Main
+void CheckParticleCollisionGrid(Particles2& particles) {
     for (int cellY = 0; cellY < GRID_HEIGHT; cellY++) {
         for (int cellX = 0; cellX < GRID_WIDTH; cellX++) {
             int cellIndex = cellY * GRID_WIDTH + cellX;
@@ -223,17 +269,17 @@ void CheckParticleCollisionGrid() {
                             if (i >= j) continue; // avoid double checks
                             collisionChecks++;
 
-                            Particle* curr = &particles[i];
-                            Particle* other = &particles[j];
+                            int curr = i;
+                            int other = j;
 
-                            float dx = curr->x_pos - other->x_pos;
-                            float dy = curr->y_pos - other->y_pos;
+                            float dx = particles.x_pos[curr] - particles.x_pos[other];
+                            float dy = particles.y_pos[curr] - particles.y_pos[other];
                             float dist_sq = dx * dx + dy * dy;
-                            float rad_sum = curr->radius + other->radius;
+                            float rad_sum = particles.radius[curr] + particles.radius[other];
 
                             if (dist_sq <= rad_sum * rad_sum) {
                                 actualCollisions++;
-                                HandleCollision(curr, other, rad_sum, dist_sq);
+                                HandleCollision(particles, curr, other, rad_sum, dist_sq);
                             }
                         }
                     }
