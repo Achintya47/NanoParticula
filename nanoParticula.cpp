@@ -14,6 +14,7 @@
 #define DAMPING_COEFF 0.99999f
 #define GRAVITY 0.9f
 #define RESTITUTION 0.3f
+#define VELOCITY_EPSILON 0.01f
 
 constexpr int CELL_SIZE = 50;
 constexpr int GRID_WIDTH = WIDTH / CELL_SIZE;
@@ -70,12 +71,12 @@ inline float dot(float x1, float y1, float x2, float y2) {
     return x1 * x2 + y1 * y2;
 }
 
-void ResetGrid(){
+void ResetGrid(Particles2& particles){
     for (auto& cell : grid) cell.clear();
 
     for (int i = 0; i < NUM_PARTICLES; i++) {
-        int cellX = particles2->x_pos[i] / CELL_SIZE;
-        int cellY =  particles2->y_pos[i] / CELL_SIZE;
+        int cellX = particles.x_pos[i] / CELL_SIZE;
+        int cellY =  particles.y_pos[i] / CELL_SIZE;
 
         if (cellX < 0) cellX = 0;
         if (cellX >= GRID_WIDTH) cellX = GRID_WIDTH - 1;
@@ -290,57 +291,88 @@ void CheckParticleCollisionGrid(Particles2& particles) {
 }
 
 
-void UpdateParticle(Particle* particle) {
-    particle->x_pos += particle->v_x;
-    particle->y_pos += particle->v_y;
+// void UpdateParticle(Particle* particle) {
+//     particle->x_pos += particle->v_x;
+//     particle->y_pos += particle->v_y;
 
-    particle->v_x *= DAMPING_COEFF;
-    particle->v_y *= DAMPING_COEFF;
+//     particle->v_x *= DAMPING_COEFF;
+//     particle->v_y *= DAMPING_COEFF;
 
-    particle->v_y += GRAVITY;
+//     particle->v_y += GRAVITY;
 
-    if (fabs(particle->v_x) < 0.01f) particle->v_x = 0;
-    if (fabs(particle->v_y) < 0.01f) particle->v_y = 0;
+//     if (fabs(particle->v_x) < 0.01f) particle->v_x = 0;
+//     if (fabs(particle->v_y) < 0.01f) particle->v_y = 0;
 
-    float x_curr = particle->x_pos;
-    float y_curr = particle->y_pos;
-    float rad = particle->radius;
+//     float x_curr = particle->x_pos;
+//     float y_curr = particle->y_pos;
+//     float rad = particle->radius;
 
-    if (x_curr - rad < 0) {
-        particle->x_pos = rad;
-        particle->v_x = -particle->v_x * RESTITUTION;
+//     if (x_curr - rad < 0) {
+//         particle->x_pos = rad;
+//         particle->v_x = -particle->v_x * RESTITUTION;
+//     }
+//     if (x_curr + rad > WIDTH) {
+//         particle->x_pos = WIDTH - rad;
+//         particle->v_x = -particle->v_x * RESTITUTION;
+//     }
+//     if (y_curr + rad > HEIGHT) {
+//         particle->y_pos = HEIGHT - rad;
+//         particle->v_y = -particle->v_y * RESTITUTION;
+//     }
+//     if (y_curr - rad < 0) {
+//         particle->y_pos = rad;
+//         particle->v_y = -particle->v_y * RESTITUTION;
+//     }
+// }
+
+void UpdateParticle(Particles2& particles, int curr) {
+    particles.x_pos[curr] += particles.v_x[curr];
+    particles.y_pos[curr] += particles.v_y[curr];
+
+    particles.v_y[curr] += GRAVITY;
+    particles.v_x[curr] *= DAMPING_COEFF;
+    particles.v_y[curr] *= DAMPING_COEFF;    
+
+    if (std::fabs(particles.v_x[curr]) < VELOCITY_EPSILON) particles.v_x[curr] = 0;
+    if (std::fabs(particles.v_y[curr]) < VELOCITY_EPSILON) particles.v_y[curr] = 0;
+
+    float rad = particles.radius[curr];
+
+    if (particles.x_pos[curr] - rad < 0) {
+        particles.x_pos[curr] = rad;
+        particles.v_x[curr] = -particles.v_x[curr] * RESTITUTION;
     }
-    if (x_curr + rad > WIDTH) {
-        particle->x_pos = WIDTH - rad;
-        particle->v_x = -particle->v_x * RESTITUTION;
+    if (particles.x_pos[curr] + rad > WIDTH) {
+        particles.x_pos[curr] = WIDTH - rad;
+        particles.v_x[curr] = -particles.v_x[curr] * RESTITUTION;
     }
-    if (y_curr + rad > HEIGHT) {
-        particle->y_pos = HEIGHT - rad;
-        particle->v_y = -particle->v_y * RESTITUTION;
+    if (particles.x_pos[curr] + rad > HEIGHT) {
+        particles.y_pos[curr] = HEIGHT - rad;
+        particles.v_y[curr] = -particles.v_y[curr] * RESTITUTION;
     }
-    if (y_curr - rad < 0) {
-        particle->y_pos = rad;
-        particle->v_y = -particle->v_y * RESTITUTION;
+    if (particles.x_pos[curr] - rad < 0) {
+        particles.y_pos[curr] = rad;
+        particles.v_y[curr] = -particles.v_y[curr] * RESTITUTION;
     }
 }
 
-void DrawParticle(Particle* particle) {
-    DrawCircle(particle->x_pos, particle->y_pos, particle->radius, particle->color);
+void DrawParticle(Particles2& particles, int curr) {
+    DrawCircle(particles.x_pos[curr], particles.y_pos[curr], particles.radius[curr], BLUE);
 }
 
-void DrawParticles() {
+void DrawParticles(Particles2& particles) {
     for (int i =0; i < NUM_PARTICLES; i++){
-        DrawParticle(particles + i);
+        DrawParticle(particles, i);
     }
 }
 
-void UpdateParticles() {
+void UpdateParticles(Particles2& particles) {
     for (int i =0; i < NUM_PARTICLES; i++){
-        UpdateParticle(particles + i);
+        UpdateParticle(particles, i);
     }
 }
 
-void InitParticles() {
+void InitParticles(Particles2& particles) {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<> rad(1,2);
@@ -356,55 +388,22 @@ void InitParticles() {
     
 
     for (int i =0; i < NUM_PARTICLES; i++){
-        particles[i].radius = rad(gen);
-        particles[i].v_x = v_x(gen);
-        particles[i].v_y = v_y(gen);
-        particles[i].x_pos = x_pos(gen);
-        particles[i].y_pos = y_pos(gen);
+        particles.radius[i] = rad(gen);
+        particles.v_x[i]= v_x(gen);
+        particles.v_y[i] = v_y(gen);
+        particles.x_pos[i] = x_pos(gen);
+        particles.y_pos[i] = y_pos(gen);
 
-        particles[i].color = (Color){
-            (unsigned char)GetRandomValue(50, 255),   // R
-            (unsigned char)GetRandomValue(50, 255),   // G
-            (unsigned char)GetRandomValue(50, 255),   // B
-            255                                       // Alpha
-        };
-        particles[i].mass = particles[i].radius * particles[i].radius * SCALING_CONSTANT;
+        // particles[i].color = (Color){
+        //     (unsigned char)GetRandomValue(50, 255),   // R
+        //     (unsigned char)GetRandomValue(50, 255),   // G
+        //     (unsigned char)GetRandomValue(50, 255),   // B
+        //     255                                       // Alpha
+        // };
+        particles.mass[i] = particles.radius[i] * particles.radius[i] * SCALING_CONSTANT;
     }
 }
 
-
-void CheckParticleCollision() {
-    Particle* curr;
-    Particle* other;
-
-    for (int i = 0; i < NUM_PARTICLES; i++){
-        curr = particles + i;
-        for (int j = i + 1; j < NUM_PARTICLES; j++){
-            if (j == i)
-                continue;
-            collisionChecks++;
-
-            other = particles + j;
-            float dx = curr->x_pos - other->x_pos;
-            float dy = curr->y_pos - other->y_pos;
-            float dist_sq = dx * dx + dy * dy;
-            float rad_sum = curr->radius + other->radius;
-            
-            if (dist_sq <= rad_sum * rad_sum) {
-                actualCollisions++;
-                HandleCollision(curr, other, rad_sum, dist_sq);
-            }
-        }
-    }
-}
-
-void UpdateMouseParticle() {
-    Vector2 mousepos = GetMousePosition();
-    mouseParticle.x_pos = mousepos.x;
-    mouseParticle.y_pos = mousepos.y;
-    mouseParticle.v_x = 0;
-    mouseParticle.v_y = 0;
-}
 
 
 int main() {
@@ -412,8 +411,9 @@ int main() {
 
     // To avoid running at full capacity, 
     SetTargetFPS(60);
+    Particles2 particles(NUM_PARTICLES);
 
-    InitParticles();
+    InitParticles(particles);
 
     while (!WindowShouldClose()) {
         BeginDrawing();
@@ -423,13 +423,13 @@ int main() {
             ReportCollisionStats();
             // DrawCollisionGraph(WIDTH - GRAPH_WIDTH - 10, 10);
 
-            ResetGrid();
-            CheckParticleCollisionGrid();
+            ResetGrid(particles);
+            CheckParticleCollisionGrid(particles);
             // DrawCircle(mouseParticle.x_pos, mouseParticle.y_pos, mouseParticle.radius, mouseParticle.color);
 
-            UpdateParticles();
+            UpdateParticles(particles);
             // CheckParticleCollision();
-            DrawParticles();
+            DrawParticles(particles);
         EndDrawing();
     }
 
