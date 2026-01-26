@@ -8,13 +8,14 @@
 
 #define WIDTH 800
 #define HEIGHT 600
-#define NUM_PARTICLES 1000
+#define NUM_PARTICLES 2000
 
 #define SCALING_CONSTANT 1.5f
 #define DAMPING_COEFF 0.99999f
 #define GRAVITY 0.9f
 #define RESTITUTION 0.3f
 #define VELOCITY_EPSILON 0.01f
+#define MU 0.4f
 
 constexpr int CELL_SIZE = 50;
 constexpr int GRID_WIDTH = WIDTH / CELL_SIZE;
@@ -33,18 +34,6 @@ constexpr int HISTORY_SIZE = 200;
 std::vector<int> collisionHistory(HISTORY_SIZE, 0);
 int historyIndex = 0;
 
-
-typedef struct {
-    float x_pos, y_pos;
-    float v_x, v_y;
-    float radius;
-    Color color;
-    float mass;
-
-} Particle;
-
-
-
 struct Particles2 {
     std::vector<float> x_pos, y_pos;
     std::vector<float> v_x, v_y;
@@ -60,12 +49,6 @@ struct Particles2 {
         mass.resize(n);
     }
 };
-
-
-// AoS structure
-Particle particles[NUM_PARTICLES];
-
-Particle mouseParticle;
 
 inline float dot(float x1, float y1, float x2, float y2) {
     return x1 * x2 + y1 * y2;
@@ -113,137 +96,96 @@ void ReportCollisionStats() {
     actualCollisions = 0; // reset for next frame
 }
 
-// void HandleCollision(Particle* curr, Particle* other, float rad_sum, float dist_sq) {
-
-//     // Unit normal Vector at collision
-//     float norm_x = curr->x_pos - other->x_pos;
-//     float norm_y = curr->y_pos - other->y_pos;
-//     float magnitude = sqrt(norm_x * norm_x + norm_y * norm_y);
-//     norm_x /= magnitude;
-//     norm_y /= magnitude;
-
-//     // Unit tangent Vector
-//     float tang_x = -norm_y;
-//     float tang_y = norm_x;
-
-//     // Velocity component projection along tangent and normal
-//     float v1_norm = dot(curr->v_x, curr->v_y, norm_x, norm_y);
-//     float v2_norm = dot(other->v_x, other->v_y, norm_x, norm_y);
-//     float v1_tang = dot(curr->v_x, curr->v_y, tang_x, tang_y);
-//     float v2_tang = dot(other->v_x, other->v_y, tang_x, tang_y);
-
-//     // Since mass is considered the same, velocities exchange, elastic collision
-//     float temp = v1_norm;
-//     v1_norm = ((v1_norm * (curr->mass - other->mass) + 2 * other->mass * v2_norm) / (curr->mass + other->mass)) * RESTITUTION;
-//     v2_norm = ((v2_norm * (other->mass - curr->mass) + 2 * curr->mass * temp) / (curr->mass + other->mass)) * RESTITUTION;
 
 
-//     // Reconstruct Velocities
-//     curr->v_x = v1_norm * norm_x + v1_tang * tang_x;
-//     curr->v_y = v1_norm * norm_y + v1_tang * tang_y;
-//     other->v_x = v2_norm * norm_x + v2_tang * tang_x;
-//     other->v_y = v2_norm * norm_y + v2_tang * tang_y;
 
-//     // Seperate overlapping particles
-//     float overlap = 0.5f * (rad_sum - sqrt(dist_sq));
-//     curr->x_pos += overlap * norm_x;
-//     curr->y_pos += overlap * norm_y;
-//     other->x_pos -= overlap * norm_x;
-//     other->y_pos -= overlap * norm_y;
-// }
+void HandleCollision(Particles2& particles, size_t curr, size_t other, float rad_sum, float dist) {
 
-
-void HandleCollision(Particles2& particles, size_t curr, size_t other, float rad_sum, float dist_sq) {
-
-    // Unit normal Vector at collision
+    // --- Contact normal
     float norm_x = particles.x_pos[curr] - particles.x_pos[other];
     float norm_y = particles.y_pos[curr] - particles.y_pos[other];
-    float magnitude = sqrt(norm_x * norm_x + norm_y * norm_y);
 
-    if (magnitude == 0.0f) return;
+    if (dist < 1e-6f) {
+        norm_x = 1.0f;
+        norm_y = 0.0f;
+        dist = 1.0f;
+    }
 
-    norm_x /= magnitude;
-    norm_y /= magnitude;
+    norm_x /= dist;
+    norm_y /= dist;
 
-    // Unit tangent Vector
+    // --- Tangent
     float tang_x = -norm_y;
     float tang_y = norm_x;
 
-    // Velocity component projection along tangent and normal
-    float v1_norm = dot(particles.v_x[curr], particles.v_y[curr], norm_x, norm_y);
-    float v2_norm = dot(particles.v_x[other], particles.v_y[other], norm_x, norm_y);
-    float v1_tang = dot(particles.v_x[curr], particles.v_y[curr], tang_x, tang_y);
-    float v2_tang = dot(particles.v_x[other], particles.v_y[other], tang_x, tang_y);
+    // --- Relative velocity
+    float rel_vx = particles.v_x[curr] - particles.v_x[other];
+    float rel_vy = particles.v_y[curr] - particles.v_y[other];
 
-    // Since mass is considered the same, velocities exchange, elastic collision
-    float temp = v1_norm;
-    v1_norm = ((v1_norm * (particles.mass[curr] - particles.mass[other]) + 2 * particles.mass[other] * v2_norm) / (particles.mass[curr] + particles.mass[other]));
-    v2_norm = ((v2_norm * (particles.mass[other] - particles.mass[curr]) + 2 * particles.mass[curr] * temp) / (particles.mass[curr] + particles.mass[other]));
+    float vn = rel_vx * norm_x + rel_vy * norm_y;
 
+    // Separating contact
+    if (vn > 0.0f)
+        return;
 
-    // Reconstruct Velocities
-    particles.v_x[curr] = v1_norm * norm_x + v1_tang * tang_x;
-    particles.v_y[curr] = v1_norm * norm_y + v1_tang * tang_y;
-    particles.v_x[other] = v2_norm * norm_x + v2_tang * tang_x;
-    particles.v_y[other] = v2_norm * norm_y + v2_tang * tang_y;
+    float invMass1 = 1.0f / particles.mass[curr];
+    float invMass2 = 1.0f / particles.mass[other];
 
-    float overlap = (rad_sum - sqrt(dist_sq));
-    float totalMass = particles.mass[curr] + particles.mass[other];
-    float ratioCurr = particles.mass[other] / totalMass;
-    float ratioOther = particles.mass[curr] / totalMass;
+    // --- Normal impulse (restitution)
+    float jn = -(1.0f + RESTITUTION) * vn;
+    jn /= (invMass1 + invMass2);
 
-    // Apply mass-weighted correction
-    particles.x_pos[curr] += overlap * ratioCurr * norm_x;
-    particles.y_pos[curr] += overlap * ratioCurr * norm_y;
-    particles.x_pos[other] -= overlap * ratioOther * norm_x;
-    particles.y_pos[other] -= overlap * ratioOther * norm_y;
+    // --- Viscoelastic damping (normal direction)
+    float kd = 0.05f;
+    jn += -kd * vn;
+
+    // Apply normal impulse
+    particles.v_x[curr] += jn * norm_x * invMass1;
+    particles.v_y[curr] += jn * norm_y * invMass1;
+    particles.v_x[other] -= jn * norm_x * invMass2;
+    particles.v_y[other] -= jn * norm_y * invMass2;
+
+    // --- Recompute relative velocity AFTER normal impulse
+    rel_vx = particles.v_x[curr] - particles.v_x[other];
+    rel_vy = particles.v_y[curr] - particles.v_y[other];
+
+    float vt = rel_vx * tang_x + rel_vy * tang_y;
+
+    // --- Tangential (friction) impulse
+    float jt = -vt / (invMass1 + invMass2);
+
+    float maxFriction = MU * std::fabs(jn);
+
+    // Coulomb friction clamp
+    if (std::fabs(jt) > maxFriction)
+        jt = (jt > 0.0f ? maxFriction : -maxFriction);
+
+    // Static friction (sticking)
+    if (std::fabs(vt) < 0.01f)
+        jt = -vt / (invMass1 + invMass2);
+
+    // Apply friction impulse
+    particles.v_x[curr] += jt * tang_x * invMass1;
+    particles.v_y[curr] += jt * tang_y * invMass1;
+    particles.v_x[other] -= jt * tang_x * invMass2;
+    particles.v_y[other] -= jt * tang_y * invMass2;
+
+    float penetration = rad_sum - dist;
+    if (penetration > 0.0f) {
+        float percent = 0.8f;
+        float slop = 0.01f;
+        float corr = std::max(penetration - slop, 0.0f)
+                    / (invMass1 + invMass2) * percent;
+
+        particles.x_pos[curr] += corr * norm_x * invMass1;
+        particles.y_pos[curr] += corr * norm_y * invMass1;
+        particles.x_pos[other] -= corr * norm_x * invMass2;
+        particles.y_pos[other] -= corr * norm_y * invMass2;
+    }
 
 }
 
 
-// void CheckParticleCollisionGrid() {
-//     for (int cellY = 0; cellY < GRID_HEIGHT; cellY++) {
-//         for (int cellX = 0; cellX < GRID_WIDTH; cellX++) {
-//             int cellIndex = cellY * GRID_WIDTH + cellX;
-
-//             // Check this cell + 8 neighbors
-//             for (int ny = -1; ny <= 1; ny++) {
-//                 for (int nx = -1; nx <= 1; nx++) {
-//                     int nX = cellX + nx;
-//                     int nY = cellY + ny;
-
-//                     if (nX < 0 || nX >= GRID_WIDTH || nY < 0 || nY >= GRID_HEIGHT)
-//                         continue;
-
-                    
-
-//                     int neighborIndex = nY * GRID_WIDTH + nX;
-
-//                     // Compare particles in cell vs neighbor
-//                     for (int i : grid[cellIndex]) {
-//                         for (int j : grid[neighborIndex]) {
-//                             if (i >= j) continue; // avoid double checks
-//                             collisionChecks++;
-
-//                             Particle* curr = &particles[i];
-//                             Particle* other = &particles[j];
-
-//                             float dx = curr->x_pos - other->x_pos;
-//                             float dy = curr->y_pos - other->y_pos;
-//                             float dist_sq = dx * dx + dy * dy;
-//                             float rad_sum = curr->radius + other->radius;
-
-//                             if (dist_sq <= rad_sum * rad_sum) {
-//                                 actualCollisions++;
-//                                 HandleCollision(curr, other, rad_sum, dist_sq);
-//                             }
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
 
 //  PASS GRID AS A PARAMETER LATER in Main
 void CheckParticleCollisionGrid(Particles2& particles) {
@@ -280,7 +222,7 @@ void CheckParticleCollisionGrid(Particles2& particles) {
 
                             if (dist_sq <= rad_sum * rad_sum) {
                                 actualCollisions++;
-                                HandleCollision(particles, curr, other, rad_sum, dist_sq);
+                                HandleCollision(particles, curr, other, rad_sum, std::sqrt(dist_sq));
                             }
                         }
                     }
@@ -290,40 +232,33 @@ void CheckParticleCollisionGrid(Particles2& particles) {
     }
 }
 
+inline void ResolveWallContact(float& vx, float& vy,float norm_x, float norm_y) 
+{
+    // Tangent
+    float tang_x = -norm_y;
+    float tang_y =  norm_x;
 
-// void UpdateParticle(Particle* particle) {
-//     particle->x_pos += particle->v_x;
-//     particle->y_pos += particle->v_y;
+    // Decompose velocity
+    float vn = vx * norm_x + vy * norm_y;
+    float vt = vx * tang_x + vy * tang_y;
 
-//     particle->v_x *= DAMPING_COEFF;
-//     particle->v_y *= DAMPING_COEFF;
+    // Normal impulse
+    float jn = -(1.0f + RESTITUTION) * vn;
 
-//     particle->v_y += GRAVITY;
+    vx += jn * norm_x;
+    vy += jn * norm_y;
 
-//     if (fabs(particle->v_x) < 0.01f) particle->v_x = 0;
-//     if (fabs(particle->v_y) < 0.01f) particle->v_y = 0;
+    // Friction impulse
+    float jt = -vt;
+    float maxFriction = MU * std::fabs(jn);
 
-//     float x_curr = particle->x_pos;
-//     float y_curr = particle->y_pos;
-//     float rad = particle->radius;
+    if (std::fabs(jt) > maxFriction)
+        jt = (jt > 0.0f ? maxFriction : -maxFriction);
 
-//     if (x_curr - rad < 0) {
-//         particle->x_pos = rad;
-//         particle->v_x = -particle->v_x * RESTITUTION;
-//     }
-//     if (x_curr + rad > WIDTH) {
-//         particle->x_pos = WIDTH - rad;
-//         particle->v_x = -particle->v_x * RESTITUTION;
-//     }
-//     if (y_curr + rad > HEIGHT) {
-//         particle->y_pos = HEIGHT - rad;
-//         particle->v_y = -particle->v_y * RESTITUTION;
-//     }
-//     if (y_curr - rad < 0) {
-//         particle->y_pos = rad;
-//         particle->v_y = -particle->v_y * RESTITUTION;
-//     }
-// }
+    vx += jt * tang_x;
+    vy += jt * tang_y;
+}
+
 
 void UpdateParticle(Particles2& particles, int curr) {
     particles.x_pos[curr] += particles.v_x[curr];
@@ -333,26 +268,23 @@ void UpdateParticle(Particles2& particles, int curr) {
     particles.v_x[curr] *= DAMPING_COEFF;
     particles.v_y[curr] *= DAMPING_COEFF;    
 
-    if (std::fabs(particles.v_x[curr]) < VELOCITY_EPSILON) particles.v_x[curr] = 0;
-    if (std::fabs(particles.v_y[curr]) < VELOCITY_EPSILON) particles.v_y[curr] = 0;
-
     float rad = particles.radius[curr];
 
-    if (particles.x_pos[curr] - rad < 0) {
+    if (particles.x_pos[curr] - rad < 0.0f) {
         particles.x_pos[curr] = rad;
-        particles.v_x[curr] = -particles.v_x[curr] * RESTITUTION;
+        ResolveWallContact(particles.v_x[curr], particles.v_y[curr], 1.0f, 0.0f);
     }
     if (particles.x_pos[curr] + rad > WIDTH) {
         particles.x_pos[curr] = WIDTH - rad;
-        particles.v_x[curr] = -particles.v_x[curr] * RESTITUTION;
+        ResolveWallContact(particles.v_x[curr], particles.v_y[curr], -1.0f, 0.0f);
     }
-    if (particles.x_pos[curr] + rad > HEIGHT) {
+    if (particles.y_pos[curr] + rad > HEIGHT) {
         particles.y_pos[curr] = HEIGHT - rad;
-        particles.v_y[curr] = -particles.v_y[curr] * RESTITUTION;
+        ResolveWallContact(particles.v_x[curr], particles.v_y[curr], 0.0f, -1.0f);
     }
-    if (particles.x_pos[curr] - rad < 0) {
+    if (particles.y_pos[curr] - rad < 0) {
         particles.y_pos[curr] = rad;
-        particles.v_y[curr] = -particles.v_y[curr] * RESTITUTION;
+        ResolveWallContact(particles.v_x[curr], particles.v_y[curr], 0.0f, 1.0f);
     }
 }
 
@@ -379,13 +311,7 @@ void InitParticles(Particles2& particles) {
     std::uniform_int_distribution<> v_x(5, 10);
     std::uniform_int_distribution<> v_y(2,10);
     std::uniform_int_distribution<> x_pos(0, WIDTH);
-    std::uniform_int_distribution<> y_pos(0, HEIGHT);
-
-    // Mouse Particle
-    mouseParticle.radius = 20; // bigger so it's visible
-    mouseParticle.mass = mouseParticle.radius * mouseParticle.radius * SCALING_CONSTANT;
-    mouseParticle.color = RED; // distinct color
-    
+    std::uniform_int_distribution<> y_pos(0, HEIGHT);  
 
     for (int i =0; i < NUM_PARTICLES; i++){
         particles.radius[i] = rad(gen);
@@ -419,16 +345,15 @@ int main() {
         BeginDrawing();
             DrawFPS(5, 5);
             ClearBackground(BLACK);
-
             ReportCollisionStats();
-            // DrawCollisionGraph(WIDTH - GRAPH_WIDTH - 10, 10);
 
-            ResetGrid(particles);
-            CheckParticleCollisionGrid(particles);
-            // DrawCircle(mouseParticle.x_pos, mouseParticle.y_pos, mouseParticle.radius, mouseParticle.color);
+            for (int it = 0; it < 5; it++) {
+                ResetGrid(particles);
+                CheckParticleCollisionGrid(particles);
+            }
 
             UpdateParticles(particles);
-            // CheckParticleCollision();
+
             DrawParticles(particles);
         EndDrawing();
     }
