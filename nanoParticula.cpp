@@ -5,7 +5,6 @@
 #include <iostream>
 #include <vector>
 
-
 #define WIDTH 800
 #define HEIGHT 600
 #define NUM_PARTICLES 2000
@@ -307,11 +306,11 @@ void UpdateParticles(Particles2& particles) {
 void InitParticles(Particles2& particles) {
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_int_distribution<> rad(1,2);
+    std::uniform_int_distribution<> rad(1,6);
     std::uniform_int_distribution<> v_x(5, 10);
     std::uniform_int_distribution<> v_y(2,10);
-    std::uniform_int_distribution<> x_pos(0, WIDTH);
-    std::uniform_int_distribution<> y_pos(0, HEIGHT);  
+    std::uniform_int_distribution<> x_pos(100, WIDTH/2);
+    std::uniform_int_distribution<> y_pos(100, HEIGHT/2);  
 
     for (int i =0; i < NUM_PARTICLES; i++){
         particles.radius[i] = rad(gen);
@@ -347,7 +346,7 @@ int main() {
             ClearBackground(BLACK);
             ReportCollisionStats();
 
-            for (int it = 0; it < 5; it++) {
+            for (int it = 0; it < 2; it++) {
                 ResetGrid(particles);
                 CheckParticleCollisionGrid(particles);
             }
