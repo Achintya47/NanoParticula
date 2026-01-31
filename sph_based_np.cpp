@@ -14,6 +14,9 @@ constexpr float VISCOSITY   = 0.1f;
 constexpr float DT = 0.001f;
 constexpr float EPS = 1e-6f;
 
+#define SIM_WIDTH 800
+#define SIM_HEIGHT 600
+
 struct SPHsystem {
     int count;
 
@@ -24,6 +27,16 @@ struct SPHsystem {
     std::vector<float> density;
     std::vector<float> pressure;
 };
+
+struct NeighbourGrid {
+    float cellSize;
+    int gridWidth;
+    int gridHeight;
+
+    std::vector<std::vector<int>> cells;
+};
+
+
 
 /**
  * SECTION 1
@@ -39,8 +52,10 @@ float laplacianW_viscosity(float r, float h);
  * Vector2 Helper functions
  */
 float Vector2Length(Vector2 rij);
+inline float Vector2LengthSqr(Vector2 rij);
 Vector2 Vector2Scale(Vector2 rij, float factor);
 Vector2 Vector2Add(Vector2 v1, Vector2 v2);
+Vector2 Vector2Subtract(Vector2 v1, Vector2 v2);
 
 /**
  * SECTION 3
@@ -51,6 +66,15 @@ void computePressure(SPHsystem& sph);
 void computePressureFoce(SPHsystem& sph);
 void computeViscosityFoce(SPHsystem& sph);
 void integrate(SPHsystem& sph);
+
+/**
+ * SECTION 4
+ * Grid Helpers
+ */
+inline int cellIndex(int x, int y, int gridWidth);
+void buildNeighbourGrid(NeighbourGrid& grid, 
+    const std::vector<Vector2>& pos, int count);
+
 
 
 /* SECITON 1 */
@@ -86,6 +110,10 @@ inline float Vector2Length(Vector2 rij) {
     return sqrtf(rij.x * rij.x + rij.y * rij.y);
 }
 
+inline float Vector2LengthSqr(Vector2 rij) {
+    return (rij.x * rij.x + rij.y * rij.y);
+}
+
 inline Vector2 Vector2Scale(Vector2 rij, float fac) {
     Vector2 result;
     result.x = rij.x * fac;
@@ -97,6 +125,13 @@ inline Vector2 Vector2Add(Vector2 v1, Vector2 v2) {
     Vector2 result;
     result.x = v1.x + v2.x;
     result.y = v1.y + v2.y;
+    return result;
+}
+
+inline Vector2 Vector2Subtract(Vector2 v1, Vector2 v2) {
+    Vector2 result;
+    result.x = v1.x - v2.x;
+    result.y = v1.y - v2.y;
     return result;
 }
 
@@ -163,4 +198,61 @@ void integrate(SPHsystem& sph){
 
         sph.force[i] = {0, 0};
     }
+}
+
+/**
+ * SECTION 4
+ */
+void buildNeighbourGrid(NeighbourGrid& grid,
+    const std::vector<Vector2>& pos,
+    int count) {
+
+    // Clear old data
+    for (auto& cell : grid.cells)
+        cell.clear();
+
+    // Insert particles
+    for (int i = 0; i < count; i++) {
+        int cx = (int)(pos[i].x / grid.cellSize);
+        int cy = (int)(pos[i].y / grid.cellSize);
+
+        // Clamp to grid
+        cx = std::max(0, std::min(cx, grid.gridWidth  - 1));
+        cy = std::max(0, std::min(cy, grid.gridHeight - 1));
+
+        int idx = cellIndex(cx, cy, grid.gridWidth);
+        grid.cells[idx].push_back(i);
+    }
+}
+
+template <typename Func>
+void ForEachNeighbour(
+    int i,
+    const NeighbourGrid& grid, 
+    const std::vector<Vector2>& pos,
+    float h,
+    Func&& func) {
+        int cx = (int)(pos[i].x / grid.cellSize);
+        int cy = (int)(pos[i].y / grid.cellSize);
+
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                int nx = cx + dx;
+                int ny = cy + dy;
+
+                if (nx < 0 || ny < 0 ||
+                    nx >= grid.gridWidth ||
+                    ny >= grid.gridHeight) continue;
+                
+                int cellIdx = cellIndex(nx, ny, grid.gridWidth);
+
+                for (int j : grid.cells[cellIdx]) {
+                    Vector2 rij = Vector2Subtract(pos[i], pos[j]);
+                    if (Vector2LengthSqr(rij) <= h * h)
+                        func(j);
+                }
+            }
+        }
+
+
 }
